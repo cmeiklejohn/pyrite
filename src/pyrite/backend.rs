@@ -3,15 +3,17 @@
 
 use std::hashmap::HashMap;
 
-enum Backend {
-  MemoryBackend()
+trait Backend {
+  fn new() -> Self;
+  fn get(&self, key: ~str) -> Option<~str>;
+  fn put(&mut self, key: ~str, value: ~str) -> bool;
 }
 
 struct MemoryBackend {
   reference: HashMap<~str, ~str>
 }
 
-impl MemoryBackend {
+impl Backend for MemoryBackend {
   fn new() -> MemoryBackend {
     MemoryBackend { reference: HashMap::new() }
   }
@@ -26,8 +28,8 @@ impl MemoryBackend {
 }
 
 #[test]
-fn test() {
-  let mut backend: MemoryBackend = MemoryBackend::new();
+fn basic_test() {
+  let mut backend: MemoryBackend = Backend::new();
 
   // Verify we can put an object.
   assert!(backend.put(~"key", ~"value"));
