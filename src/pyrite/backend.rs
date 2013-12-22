@@ -3,6 +3,10 @@
 
 use std::hashmap::HashMap;
 
+enum Backend {
+  MemoryBackend()
+}
+
 struct MemoryBackend {
   reference: HashMap<~str, ~str>
 }
