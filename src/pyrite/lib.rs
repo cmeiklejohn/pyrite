@@ -4,93 +4,110 @@
 extern mod extra;
 
 use std::hashmap::HashMap;
+
+use std::cell::RefCell;
+
+use std::io::{Writer, Listener, Acceptor};
+use std::io::net::tcp::TcpListener;
+use std::io::net::ip::{SocketAddr, Ipv4Addr};
+
 use extra::comm::DuplexStream;
 
-enum BackendRequestMessage {
-  BackendTerminate(),
-  BackendGetRequest(~str),
-  BackendStoreRequest(~str, ~str)
+/// Backend implementations, providing a trait and a simplified memory
+/// backend for testing.
+
+trait Backend {
+  fn new() -> Self;
+  fn get(&self, key: ~str) -> Option<~str>;
+  fn put(&mut self, key: ~str, value: ~str) -> bool;
 }
 
-enum BackendResponseMessage {
-  BackendGetFailedResponse(~str),
-  BackendGetSuccessResponse(~str, ~str),
-  BackendStoreFailedResponse(~str, ~str),
-  BackendStoreSuccessResponse(~str, ~str)
+struct MemoryBackend {
+  reference: HashMap<~str, ~str>
 }
 
-/// Memory based backend for a simplistic key/value store.
-fn backend(channel: &DuplexStream<BackendResponseMessage, BackendRequestMessage>) {
-  let mut backend: HashMap<~str, ~str>;
-  let mut message: BackendRequestMessage;
+impl Backend for MemoryBackend {
+  fn new() -> MemoryBackend {
+    MemoryBackend { reference: HashMap::new() }
+  }
 
-  backend = HashMap::new();
+  fn get(&self, key: ~str) -> Option<~str> {
+    self.reference.find_copy(&key)
+  }
 
-  loop {
-    message = channel.recv();
+  fn put(&mut self, key: ~str, value: ~str) -> bool {
+    self.reference.insert(key.clone(), value.clone())
+  }
+}
 
-    match message {
-      BackendGetRequest(key) => {
-        println(format!("Request to retrieve key {:s}", key));
-        match backend.find_copy(&key) {
-          Some(value) => {
-            channel.send(BackendGetSuccessResponse(key, value));
-          },
-          _ => {
-            channel.send(BackendGetFailedResponse(key));
-          }
-        }
-      }
-      BackendStoreRequest(key, value) => {
-        println(format!("Request to store key/value pair {:s} => {:s}",
-                        key, value));
-        match backend.insert(key.clone(), value.clone()) {
-          true => {
-            channel.send(BackendStoreSuccessResponse(key, value))
-          },
-          false => {
-            channel.send(BackendStoreFailedResponse(key, value))
-          }
-        };
-      },
-      BackendTerminate() => {
-        println(format!("Terminating backend."));
-        break
-      }
+/// Tests, verifying proper operation of the backend implementations.
+
+#[test]
+fn backend_test() {
+  let mut backend: MemoryBackend = Backend::new();
+
+  // Verify we can put an object.
+  assert!(backend.put(~"key", ~"value"));
+
+  // Verify we can retrieve the objecta after putting.
+  match backend.get(~"key") {
+    Some(value) => {
+      assert!(~"value" == value)
+    },
+    None => {
+      fail!("Key could not be found after writing!")
+    }
+  }
+
+  // Verify we get an error for an object that isn't there.
+  match backend.get(~"missing") {
+    None => {
+      assert!(true)
+    },
+    _ => {
+      fail!("Found an object we didn't write!")
     }
   }
 }
 
-// Perform a basic test of the key/value store.
-fn main() {
-  let (server, client) = DuplexStream();
+/// Backend server implementation.  Provides a listening interface for
+/// inbound messages, which are converted to messages to the backend
+/// itself.
 
-  do spawn {
-    backend(&server);
-  }
+trait BackendServer {
+  fn new() -> Self;
+}
 
-  client.send(BackendStoreRequest(~"Ingmar Bergman", ~"The Silence"));
-  client.send(BackendStoreRequest(~"Jean-Luc Godard", ~"Breathless"));
+struct MemoryBackendServer {
+  backend: MemoryBackend
+}
 
-  client.send(BackendGetRequest(~"Jean-Luc Godard"));
-  client.send(BackendGetRequest(~"Francois Truffaut"));
+impl BackendServer for MemoryBackendServer {
+  fn new() -> MemoryBackendServer {
+    let mut backend = MemoryBackendServer { backend: Backend::new() };
 
-  do 3.times {
-    match client.recv() {
-      BackendGetFailedResponse(key) => {
-        println(format!("Key {:s} retrieval failed!", key));
-      },
-      BackendGetSuccessResponse(key, value) => {
-        println(format!("Key {:s} retrieval successful => {:s}!", key, value));
-      },
-      BackendStoreFailedResponse(key, _) => {
-        println(format!("Key {:s} store failed!", key));
-      },
-      BackendStoreSuccessResponse(key, _) => {
-        println(format!("Key {:s} stored successfully!", key));
+    let mut acceptor = TcpListener::bind(SocketAddr {
+      ip: Ipv4Addr(127, 0, 0, 1), port: 8080
+    }).listen().unwrap();
+
+    println(format!("Acceptor is listening on port {:d}", 8080));
+
+    loop {
+      let stream = RefCell::new(acceptor.accept().unwrap());
+
+      do spawn {
+        let mut stream = stream.unwrap();
+        stream.write(bytes!("Hello World!\r\n"));
       }
     }
-  }
 
-  client.send(BackendTerminate);
+    return backend;
+  }
+}
+
+/// Tests for the memory based backend TCP server.
+
+#[test]
+fn backend_server_test() {
+  // let mut server: MemoryBackendServer = BackendServer::new();
 }
