@@ -84,24 +84,49 @@ struct MemoryBackendServer {
 
 impl BackendServer for MemoryBackendServer {
   fn new() -> MemoryBackendServer {
-    let mut backend = MemoryBackendServer { backend: Backend::new() };
 
+    // Open a new TCP Socket.
     let mut acceptor = TcpListener::bind(SocketAddr {
       ip: Ipv4Addr(127, 0, 0, 1), port: 8080
     }).listen().unwrap();
 
     println(format!("Acceptor is listening on port {:d}", 8080));
 
+    // Spawn a task for every incoming TCP connection.
     loop {
+
+      // Open socket.
       let stream = RefCell::new(acceptor.accept().unwrap());
 
+      // Upon each connection, spawn task for the TCP connection.
       do spawn {
+
+        // Start up a shared channel for the children to talk to the
+        // TCP request.
+        let (port, chan) = SharedChan::new();
+
+        // Spawn a task to do some work.
+        do spawn {
+
+          // First, clone the shared TCP channel for talking to the
+          // socket.
+          let mut chan = chan.clone();
+
+          // Send a message back to the TCP socket task.
+          chan.send(~"done in task");
+
+        }
+
+        // Unwrap the data from the stream, and clone.
         let mut stream = stream.unwrap();
-        stream.write(bytes!("Hello World!\r\n"));
+
+        // TCP connection then blocks on the three responses.
+        let response = port.recv();
+
+        // Return to client.
+        stream.write(bytes!("OK\r\n"));
       }
     }
-
-    return backend;
   }
 }
 
@@ -109,5 +134,5 @@ impl BackendServer for MemoryBackendServer {
 
 #[test]
 fn backend_server_test() {
-  // let mut server: MemoryBackendServer = BackendServer::new();
+  let mut backend_server: MemoryBackendServer = BackendServer::new();
 }
