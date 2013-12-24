@@ -1,6 +1,10 @@
 #[desc = "The Pyrite Rust package."];
 #[license = "MIT"];
 
+/// An attempt at building a Riak get/put FSM style coordinator process
+/// in Rust.
+///
+
 extern mod extra;
 
 use std::hashmap::HashMap;
@@ -10,8 +14,6 @@ use std::cell::RefCell;
 use std::io::{Writer, Listener, Acceptor};
 use std::io::net::tcp::TcpListener;
 use std::io::net::ip::{SocketAddr, Ipv4Addr};
-
-use extra::comm::DuplexStream;
 
 /// Backend implementations, providing a trait and a simplified memory
 /// backend for testing.
@@ -90,10 +92,22 @@ impl BackendServer for MemoryBackendServer {
       ip: Ipv4Addr(127, 0, 0, 1), port: 8080
     }).listen().unwrap();
 
+    // Spawn a task with the actual backend.
+    do spawn {
+
+      // Start backend.
+      let mut backend: MemoryBackend = Backend::new();
+
+    }
+
+    // Debugging.
     println(format!("Acceptor is listening on port {:d}", 8080));
 
     // Spawn a task for every incoming TCP connection.
     loop {
+
+      // Dummy backend names.
+      let backends = ~[1, 2, 3];
 
       // Open socket.
       let stream = RefCell::new(acceptor.accept().unwrap());
@@ -105,15 +119,26 @@ impl BackendServer for MemoryBackendServer {
         // TCP request.
         let (port, chan) = SharedChan::new();
 
-        // Spawn a task to do some work.
-        do spawn {
+        // Spawn a task to talk to each backend.
+        for &i in backends.iter() {
 
           // First, clone the shared TCP channel for talking to the
           // socket.
-          let mut chan = chan.clone();
+          let chan = chan.clone();
 
-          // Send a message back to the TCP socket task.
-          chan.send(~"done in task");
+          // Spawn a task to do some work.
+          do spawn {
+
+            // Send a message back to the TCP socket task.
+            chan.send(~"done in task");
+
+            // TODO: Somehow talk to the backend via a duplexstream?
+            // However, duplexstreams can't be shared, right?
+            //
+
+            // Debug.
+            println(format!("Backend {:d} completed processing", i));
+          }
 
         }
 
@@ -121,7 +146,10 @@ impl BackendServer for MemoryBackendServer {
         let mut stream = stream.unwrap();
 
         // TCP connection then blocks on the three responses.
-        let response = port.recv();
+        //
+        // Don't validate the responses yet.
+        //
+        port.recv() + port.recv() + port.recv();
 
         // Return to client.
         stream.write(bytes!("OK\r\n"));
